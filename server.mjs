@@ -84,8 +84,11 @@ async function getTranscript(videoId) {
       .join("")
       .replace(/\s+/g, " ")
       .trim();
-    // 임계 10자: 한 문장짜리 쇼츠 자막은 살리고 [음악] 주석 부스러기만 거른다 (리뷰 08-04)
-    return hasSpeech(text) ? text : null;
+    // 자막이 있는데 내용이 [음악] 주석뿐 = 노래 영상 — "자막 없음"과 구분해 알려준다
+    // (hasSpeech 임계 10자: 한 문장짜리 쇼츠 자막은 살리고 주석 부스러기만 거른다, 리뷰 08-04)
+    if (text && !hasSpeech(text))
+      throw Object.assign(new Error("음악(노래)만 있는 영상입니다 — 요약할 말소리가 없어요."), { code: 422 });
+    return text || null;
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -218,7 +221,7 @@ createServer((req, res) => {
         // 429 폴백: 익스텐션이 백그라운드 탭의 스크립트 패널에서 긁어 보낸 자막
         transcript = clientTranscript.replace(/\s+/g, " ").trim();
         if (!hasSpeech(transcript)) {
-          res.writeHead(422).end(JSON.stringify({ error: "이 영상에는 말소리 자막이 없습니다. (화면 글자·음악만 있는 영상)" }));
+          res.writeHead(422).end(JSON.stringify({ error: "음악(노래)만 있는 영상입니다 — 요약할 말소리가 없어요." }));
           return;
         }
         cacheTranscript(videoId, transcript);
@@ -247,7 +250,8 @@ createServer((req, res) => {
       });
       res.end(JSON.stringify({ summary, title: realTitle, archived: file ? `~/Documents/YouTube요약/${file}` : null }));
     } catch (e) {
-      res.writeHead(typeof e.code === "number" ? e.code : 500).end(JSON.stringify({ error: e.message.slice(0, 500) }));
+      // 의도적으로 던진 코드만 통과 — execFile 에러의 code(프로세스 종료코드 1 등)가 HTTP 코드로 새면 안 됨
+      res.writeHead([400, 422, 429].includes(e.code) ? e.code : 500).end(JSON.stringify({ error: e.message.slice(0, 500) }));
     }
   });
 })
