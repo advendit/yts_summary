@@ -4,6 +4,11 @@
 const BTN_ID = "yts-summary-btn";
 const PANEL_ID = "yts-summary-panel";
 let pickMode = false;
+let currentMode = "summary"; // "summary" | "analyze"
+const MODES = {
+  summary: { icon: "📝", label: "요약", verb: "요약할", color: "#e62117" },
+  analyze: { icon: "🔬", label: "분석", verb: "분석할", color: "#7b2ff2" },
+};
 
 function currentVideoId() {
   const u = new URL(location.href);
@@ -24,7 +29,7 @@ function ensurePanel() {
     font:14px/1.6 -apple-system,'Apple SD Gothic Neo',sans-serif;`;
   panel.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #eee;">
-      <strong style="flex:1;font-size:14px;">📝 요약 결과</strong>
+      <strong style="flex:1;font-size:14px;">📝 요약·분석 결과</strong>
       <button id="yts-panel-close" style="border:0;background:#f2f2f2;border-radius:6px;padding:4px 10px;cursor:pointer;">✕</button>
     </div>
     <div id="yts-list" style="overflow-y:auto;"></div>`;
@@ -54,17 +59,18 @@ function addSection(title) {
   return sec;
 }
 
-async function summarize(videoId, title) {
+async function summarize(videoId, title, mode) {
+  const m = MODES[mode] || MODES.summary;
   const sec = addSection("⏳ " + title);
-  sec.querySelector(".yts-sec-body").textContent = "자막 추출 + Claude 요약 중… (영상 길이에 따라 1~2분)";
+  sec.querySelector(".yts-sec-body").textContent = `자막 추출 + Claude ${m.label} 중… (영상 길이에 따라 1~2분)`;
   try {
-    const res = await chrome.runtime.sendMessage({ type: "summarize", videoId, title });
+    const res = await chrome.runtime.sendMessage({ type: "summarize", videoId, title, mode });
     if (res.error) {
       sec.querySelector("strong").textContent = "⚠️ " + title;
       sec.querySelector(".yts-sec-body").textContent = "오류: " + res.error;
       return;
     }
-    sec.querySelector("strong").textContent = "📝 " + (res.title || title);
+    sec.querySelector("strong").textContent = m.icon + " " + (res.title || title);
     sec.querySelector(".yts-sec-body").textContent = res.summary;
     sec.querySelector(".yts-sec-copy").style.display = "block";
     if (res.archived) sec.querySelector(".yts-sec-file").textContent = "💾 " + res.archived;
@@ -76,11 +82,15 @@ async function summarize(videoId, title) {
 
 // ---------- 영상 선택 모드 (홈/검색/구독 피드 등) ----------
 
-function setPickMode(on) {
+function setPickMode(on, mode) {
   pickMode = on;
-  const btn = document.getElementById(BTN_ID);
-  btn.textContent = on ? "👆 요약할 영상을 클릭하세요 (ESC 취소)" : "📝 요약";
-  btn.style.background = on ? "#065fd4" : "#e62117";
+  if (mode) currentMode = mode;
+  const m = MODES[currentMode];
+  const btn = document.getElementById(BTN_ID + "-" + currentMode);
+  const other = document.getElementById(BTN_ID + "-" + (currentMode === "summary" ? "analyze" : "summary"));
+  btn.textContent = on ? `👆 ${m.verb} 영상을 클릭하세요 (ESC 취소)` : m.icon + " " + m.label;
+  btn.style.background = on ? "#065fd4" : m.color;
+  if (other) other.style.display = on ? "none" : "";
   document.documentElement.style.cursor = on ? "crosshair" : "";
 }
 
@@ -108,7 +118,7 @@ document.addEventListener(
     e.preventDefault();
     e.stopImmediatePropagation();
     setPickMode(false);
-    summarize(video.videoId, video.title);
+    summarize(video.videoId, video.title, currentMode);
   },
   true // capture: 유튜브 자체 네비게이션보다 먼저 가로채기
 );
@@ -119,32 +129,37 @@ document.addEventListener("keydown", (e) => {
 
 // ---------- 버튼 ----------
 
-function onButtonClick() {
+function onButtonClick(mode) {
   if (pickMode) {
-    setPickMode(false);
+    setPickMode(false, mode);
     return;
   }
+  currentMode = mode;
   const videoId = currentVideoId();
   if (videoId) {
-    // 시청 중인 영상은 바로 요약
-    summarize(videoId, document.title.replace(" - YouTube", ""));
+    // 시청 중인 영상은 바로 처리
+    summarize(videoId, document.title.replace(" - YouTube", ""), mode);
   } else {
-    setPickMode(true);
+    setPickMode(true, mode);
   }
 }
 
 function injectButton() {
-  if (document.getElementById(BTN_ID)) return;
-  const btn = document.createElement("button");
-  btn.id = BTN_ID;
-  btn.textContent = "📝 요약";
-  btn.style.cssText = `
-    position:fixed; bottom:24px; right:24px; z-index:2147483647;
-    background:#e62117; color:#fff; border:0; border-radius:24px;
-    padding:10px 18px; font:bold 14px -apple-system,sans-serif;
-    cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3);`;
-  btn.onclick = onButtonClick;
-  document.body.appendChild(btn);
+  if (document.getElementById(BTN_ID + "-summary")) return;
+  const positions = { summary: 24, analyze: 110 };
+  for (const [mode, right] of Object.entries(positions)) {
+    const m = MODES[mode];
+    const btn = document.createElement("button");
+    btn.id = BTN_ID + "-" + mode;
+    btn.textContent = m.icon + " " + m.label;
+    btn.style.cssText = `
+      position:fixed; bottom:24px; right:${right}px; z-index:2147483647;
+      background:${m.color}; color:#fff; border:0; border-radius:24px;
+      padding:10px 18px; font:bold 14px -apple-system,sans-serif;
+      cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3);`;
+    btn.onclick = () => onButtonClick(mode);
+    document.body.appendChild(btn);
+  }
 
   // 보관함 버튼
   const arc = document.createElement("button");
@@ -152,7 +167,7 @@ function injectButton() {
   arc.textContent = "📂";
   arc.title = "요약 보관함";
   arc.style.cssText = `
-    position:fixed; bottom:24px; right:130px; z-index:2147483647;
+    position:fixed; bottom:24px; right:196px; z-index:2147483647;
     background:#555; color:#fff; border:0; border-radius:24px;
     padding:10px 14px; font:bold 14px -apple-system,sans-serif;
     cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3);`;

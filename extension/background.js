@@ -7,7 +7,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const res = await fetch("http://127.0.0.1:8790/summarize", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ videoId: msg.videoId, title: msg.title }),
+        body: JSON.stringify({ videoId: msg.videoId, title: msg.title, mode: msg.mode }),
       });
       const data = await res.json();
       sendResponse(res.ok ? { summary: data.summary, title: data.title, archived: data.archived } : { error: data.error || `서버 오류 (${res.status})` });

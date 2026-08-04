@@ -15,10 +15,30 @@ const YTDLP_BASE = ["--js-runtimes", `node:${NODE}`]; // 유튜브가 JS 런타�
 const ARCHIVE = `${HOME}/Documents/YouTube요약`;
 const PORT = 8790;
 
-const PROMPT =
-  "유튜브 영상 스크립트를 한국어로 정리해라. 형식:\n" +
-  "## 한 줄 요약\n## 핵심 내용 (불릿 5~10개)\n## 상세 정리 (주제별 단락)\n" +
-  "스크립트에 없는 내용은 지어내지 마라. 요약 외 다른 말은 하지 마라.";
+const PROMPTS = {
+  summary:
+    "유튜브 영상 스크립트를 한국어로 정리해라. 형식:\n" +
+    "## 한 줄 요약\n## 핵심 내용 (불릿 5~10개)\n## 상세 정리 (주제별 단락)\n" +
+    "스크립트에 없는 내용은 지어내지 마라. 요약 외 다른 말은 하지 마라.",
+  analyze:
+    "유튜브 영상 스크립트를 아래 방법론으로 한국어 분석해라.\n" +
+    "대원칙: 스크립트(나레이션)가 유일한 증거다. 스크립트에 없는 내용은 지어내지 말고, 각 판단에는 스크립트 문장을 근거로 인용해라. 판단이 어려우면 '판단 불가'라고 써라.\n\n" +
+    "## 개요\n" +
+    "- 주제와 형식(강의/리뷰/브이로그/광고/인터뷰 등) 한 줄\n" +
+    "- 후킹 기법: 혜택강조/손실회피/호기심갭/권위/한정성/사회증명/감성공감/정보제공 중 해당하는 것(복수 가능) + 근거 인용\n" +
+    "- 톤: 긴급/신뢰/자극/유머/따뜻함/전문성 중 해당하는 것\n\n" +
+    "## 구성 비중\n" +
+    "스크립트를 훅(시선 정지)/문제제기/해결/증거(믿게 만드는 장치: 수치·사례·시연·후기)/행동요청(CTA)/기타 구간으로 나누고, 구간별 분량 비중(%)과 대표 문장 인용을 표로. 이 영상이 어디에 분량을 쓰는지 비중 시그니처를 한 줄로 요약해라.\n\n" +
+    "## 스토리텔링 구조\n" +
+    "도입→전개→절정→마무리 단계별로, 각 단계에서 시청자를 붙잡아 두는 장치가 무엇인지.\n\n" +
+    "## 비평\n" +
+    "- 잘한 점 1~3개 / 아쉬운 점 1~3개 — 설득 구조·구성 관점만, 취향 평 금지\n" +
+    "- 디벨롭 포인트: 약점을 보완해 원본보다 낫게 만들 구체적 포인트\n\n" +
+    "## 타겟\n" +
+    "- 이 방식이 가장 잘 먹힐 타겟 (60자 이내)\n" +
+    "- 같은 방식으로 확장 가능한 타겟 (60자 이내)\n\n" +
+    "분석 외 다른 말은 하지 마라.",
+};
 
 async function getTranscript(videoId) {
   const dir = await mkdtemp(join(tmpdir(), "yts-"));
@@ -54,11 +74,11 @@ async function getTranscript(videoId) {
   }
 }
 
-function summarize(title, transcript) {
+function summarize(title, transcript, prompt) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLAUDE,
-      ["-p", PROMPT],
+      ["-p", prompt],
       { maxBuffer: 16 * 1024 * 1024, timeout: 10 * 60 * 1000 },
       (err, stdout, stderr) => {
         if (err) reject(new Error((stderr || err.message).slice(0, 500)));
@@ -69,13 +89,13 @@ function summarize(title, transcript) {
   });
 }
 
-async function archive(videoId, title, summary) {
+async function archive(videoId, title, summary, mode) {
   await mkdir(ARCHIVE, { recursive: true });
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
   const safeTitle = title.replace(/[\/\\:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  const file = `${ts}_${safeTitle}.md`;
+  const file = `${ts}_${mode === "analyze" ? "[분석] " : ""}${safeTitle}.md`;
   const body =
     `# ${title}\n\n` +
     `- URL: https://www.youtube.com/watch?v=${videoId}\n` +
@@ -173,8 +193,8 @@ createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", async () => {
     try {
-      const { videoId, title } = JSON.parse(body);
-      console.log(new Date().toISOString(), "요청:", videoId, title);
+      const { videoId, title, mode } = JSON.parse(body);
+      console.log(new Date().toISOString(), "요청:", mode || "summary", videoId, title);
       if (!/^[\w-]{6,20}$/.test(videoId || "")) throw Object.assign(new Error("잘못된 videoId"), { code: 400 });
       const transcript = await getTranscript(videoId);
       if (!transcript) {
@@ -188,8 +208,8 @@ createServer((req, res) => {
           await run(YTDLP, [...YTDLP_BASE, "--skip-download", "--print", "%(title)s", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 60000 })
         ).stdout.trim() || videoId;
       }
-      const summary = await summarize(realTitle, transcript);
-      const file = await archive(videoId, realTitle, summary).catch((e) => {
+      const summary = await summarize(realTitle, transcript, PROMPTS[mode] || PROMPTS.summary);
+      const file = await archive(videoId, realTitle, summary, mode).catch((e) => {
         console.error("아카이빙 실패:", e.message);
         return null;
       });
