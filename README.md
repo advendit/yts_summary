@@ -20,7 +20,7 @@
 ## 설치
 
 ```bash
-git clone <이 저장소> && cd yts
+git clone https://github.com/advendit/yts_summary.git && cd yts_summary
 ./install.sh
 ```
 
