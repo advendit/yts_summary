@@ -107,7 +107,7 @@ async function archive(videoId, title, summary, mode) {
   const pad = (n) => String(n).padStart(2, "0");
   const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
   const safeTitle = title.replace(/[\/\\:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  const file = `${ts}_${mode === "analyze" ? "[분석] " : ""}${safeTitle}.md`;
+  const file = `${ts}_${mode === "analyze" ? "[분석]" : "[요약]"} ${safeTitle}.md`;
   const body =
     `# ${title}\n\n` +
     `- URL: https://www.youtube.com/watch?v=${videoId}\n` +

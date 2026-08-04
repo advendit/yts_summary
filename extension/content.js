@@ -38,12 +38,13 @@ function ensurePanel() {
   return panel;
 }
 
-function addSection(title) {
+function addSection(title, m) {
   const list = ensurePanel().querySelector("#yts-list");
   const sec = document.createElement("div");
   sec.style.cssText = "border-bottom:1px solid #eee;padding:12px 14px;";
   sec.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;">
+      <span style="flex-shrink:0;font-size:11px;font-weight:bold;color:#fff;border-radius:4px;padding:1px 7px;background:${m.color};">${m.label}</span>
       <strong style="flex:1;font-size:13px;"></strong>
       <button class="yts-sec-copy" style="border:0;background:#f2f2f2;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:12px;display:none;">복사</button>
     </div>
@@ -61,7 +62,7 @@ function addSection(title) {
 
 async function summarize(videoId, title, mode) {
   const m = MODES[mode] || MODES.summary;
-  const sec = addSection("⏳ " + title);
+  const sec = addSection("⏳ " + title, m);
   sec.querySelector(".yts-sec-body").textContent = `자막 추출 + Claude ${m.label} 중… (영상 길이에 따라 1~2분)`;
   try {
     const res = await chrome.runtime.sendMessage({ type: "summarize", videoId, title, mode });
