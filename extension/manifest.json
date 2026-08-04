@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube 스크립트 요약",
+  "version": "1.1.0",
+  "description": "유튜브 영상 스크립트를 추출해 로컬 Claude로 요약합니다.",
+  "host_permissions": ["http://127.0.0.1:8790/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+}
