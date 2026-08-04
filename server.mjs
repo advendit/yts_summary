@@ -48,6 +48,8 @@ async function getTranscript(videoId) {
       YTDLP,
       [
         ...YTDLP_BASE,
+        // -i: 한 언어가 429로 막혀도 중단하지 않고 나머지 언어는 받는다 (08-04, 유튜브 자막 레이트리밋)
+        "-i", "--sleep-subtitles", "2",
         "--skip-download", "--write-subs", "--write-auto-subs",
         "--sub-langs", "ko,en", "--sub-format", "json3",
         "-o", join(dir, "%(id)s"),
@@ -68,7 +70,9 @@ async function getTranscript(videoId) {
       .join("")
       .replace(/\s+/g, " ")
       .trim();
-    return text || null;
+    // [Music]/[음악] 같은 주석만 있는 자막(음악 영상)은 자막 없음으로 취급
+    const spoken = text.replace(/\[[^\]]*\]/g, "").trim();
+    return spoken.length >= 20 ? text : null;
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
