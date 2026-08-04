@@ -13,7 +13,15 @@ const CLAUDE = process.env.YTS_CLAUDE || "claude";
 const YTDLP = process.env.YTS_YTDLP || `${HOME}/.local/bin/yt-dlp`;
 const YTDLP_BASE = ["--js-runtimes", `node:${NODE}`]; // 유튜브가 JS 런타임 요구 (2026)
 const ARCHIVE = `${HOME}/Documents/YouTube요약`;
+const CACHE = `${HOME}/.cache/yts-transcripts`; // videoId.txt — 같은 영상 재요청이 유튜브를 다시 때리지 않게(429 원인 제거)
 const PORT = 8790;
+
+// [Music]/[음악] 같은 주석뿐인 자막(음악 영상)은 발화 없음으로 취급 — 판정 기준은 이 함수 하나만
+const hasSpeech = (text) => text.replace(/\[[^\]]*\]/g, "").trim().length >= 10;
+
+const cachedTranscript = (videoId) => readFile(join(CACHE, `${videoId}.txt`), "utf8").catch(() => null);
+const cacheTranscript = (videoId, text) =>
+  mkdir(CACHE, { recursive: true }).then(() => writeFile(join(CACHE, `${videoId}.txt`), text)).catch(() => {});
 
 const PROMPTS = {
   summary:
@@ -76,11 +84,8 @@ async function getTranscript(videoId) {
       .join("")
       .replace(/\s+/g, " ")
       .trim();
-    // [Music]/[음악] 같은 주석만 있는 자막(음악 영상)은 자막 없음으로 취급.
-    // 임계 10자: 한 문장짜리 쇼츠 자막은 살리고 주석 부스러기만 거른다 (리뷰 08-04)
-    const MIN_SPOKEN = 10;
-    const spoken = text.replace(/\[[^\]]*\]/g, "").trim();
-    return spoken.length >= MIN_SPOKEN ? text : null;
+    // 임계 10자: 한 문장짜리 쇼츠 자막은 살리고 [음악] 주석 부스러기만 거른다 (리뷰 08-04)
+    return hasSpeech(text) ? text : null;
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -205,10 +210,25 @@ createServer((req, res) => {
   req.on("data", (c) => (body += c));
   req.on("end", async () => {
     try {
-      const { videoId, title, mode } = JSON.parse(body);
-      console.log(new Date().toISOString(), "요청:", mode || "summary", videoId, title);
+      const { videoId, title, mode, transcript: clientTranscript } = JSON.parse(body);
+      console.log(new Date().toISOString(), "요청:", mode || "summary", videoId, title, clientTranscript ? "(브라우저 자막)" : "");
       if (!/^[\w-]{6,20}$/.test(videoId || "")) throw Object.assign(new Error("잘못된 videoId"), { code: 400 });
-      const transcript = await getTranscript(videoId);
+      let transcript;
+      if (typeof clientTranscript === "string" && clientTranscript.trim()) {
+        // 429 폴백: 익스텐션이 백그라운드 탭의 스크립트 패널에서 긁어 보낸 자막
+        transcript = clientTranscript.replace(/\s+/g, " ").trim();
+        if (!hasSpeech(transcript)) {
+          res.writeHead(422).end(JSON.stringify({ error: "이 영상에는 말소리 자막이 없습니다. (화면 글자·음악만 있는 영상)" }));
+          return;
+        }
+        cacheTranscript(videoId, transcript);
+      } else {
+        transcript = await cachedTranscript(videoId);
+        if (!transcript) {
+          transcript = await getTranscript(videoId);
+          if (transcript) cacheTranscript(videoId, transcript);
+        }
+      }
       if (!transcript) {
         res.writeHead(422).end(JSON.stringify({ error: "이 영상에는 자막(스크립트)이 없습니다." }));
         return;

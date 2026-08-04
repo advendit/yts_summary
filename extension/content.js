@@ -15,6 +15,44 @@ function currentVideoId() {
   return u.searchParams.get("v") || (u.pathname.match(/^\/shorts\/([\w-]+)/) || [])[1] || null;
 }
 
+// ---------- 자막 스크레이퍼 모드 (백그라운드 탭에서 스크립트 패널 긁기 — 429 폴백) ----------
+// ponytail: 유튜브 DOM 셀렉터 의존이라 마크업 개편 시 깨질 수 있음 — 깨지면 이 블록의 셀렉터만 갱신
+
+async function scrapeMode() {
+  const videoId = new URL(location.href).searchParams.get("v");
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const poll = async (fn, timeout) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      const v = fn();
+      if (v) return v;
+      await wait(500);
+    }
+    return null;
+  };
+  let transcript = null;
+  try {
+    // 설명란의 "스크립트 표시" 버튼 — 안 보이면 설명을 펼친 뒤 재시도
+    let btn = await poll(() => document.querySelector("ytd-video-description-transcript-section-renderer button"), 8000);
+    if (!btn) {
+      document.querySelector("#description-inline-expander #expand, tp-yt-paper-button#expand")?.click();
+      btn = await poll(() => document.querySelector("ytd-video-description-transcript-section-renderer button"), 5000);
+    }
+    if (btn) {
+      btn.click();
+      if (await poll(() => document.querySelector("ytd-transcript-segment-renderer"), 10000)) {
+        await wait(1500); // 세그먼트 전체 로딩 여유
+        transcript = [...document.querySelectorAll("ytd-transcript-segment-renderer .segment-text")]
+          .map((el) => el.textContent.trim())
+          .join(" ");
+      }
+    }
+  } catch {}
+  chrome.runtime.sendMessage({ type: "yts-transcript", videoId, transcript });
+}
+
+if (location.hash === "#yts-transcript") scrapeMode();
+
 // ---------- 누적형 패널 ----------
 
 function ensurePanel() {

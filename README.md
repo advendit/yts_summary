@@ -42,6 +42,7 @@ git clone https://github.com/advendit/yts_summary.git && cd yts_summary
 ## 문제 해결
 
 - **자막 추출 실패**: yt-dlp가 오래된 경우가 대부분 → `~/.local/bin/yt-dlp -U`
+- **유튜브 자막 레이트리밋(429)**: 익스텐션이 자동으로 백그라운드 탭을 열어 유튜브 페이지의 스크립트 패널에서 자막을 긁어 재시도 (탭은 자동으로 닫힘). 같은 영상 재요청은 `~/.cache/yts-transcripts/` 캐시를 써서 유튜브를 다시 안 때림
 - **서버 로그**: `/tmp/yts-server.log`
 - **자막 없는 영상**: 지원 안 함 (STT 미구현)
 - **포트**: 8790 고정. 충돌 시 `lsof -nP -iTCP:8790`으로 점유 프로세스 확인
