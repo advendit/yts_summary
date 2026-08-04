@@ -44,6 +44,7 @@ async function getTranscript(videoId) {
   const dir = await mkdtemp(join(tmpdir(), "yts-"));
   try {
     let runError = null;
+    let errOut = "";
     await run(
       YTDLP,
       [
@@ -56,9 +57,14 @@ async function getTranscript(videoId) {
         `https://www.youtube.com/watch?v=${videoId}`,
       ],
       { timeout: 120000 }
-    ).catch((e) => (runError = e)); // 일부 언어만 실패(429 등)해도 받은 자막은 사용
+    ).then((r) => (errOut = r.stderr || "")) // 일부 언어만 실패(429 등)해도 받은 자막은 사용
+      .catch((e) => { runError = e; errOut = e.stderr || ""; });
     const files = (await readdir(dir)).filter((f) => f.endsWith(".json3"));
     if (!files.length) {
+      // 전 언어가 429로 막히면 -i가 exit 0으로 삼킨다 — "자막 없음"으로 오도하지 않는다 (리뷰 08-04)
+      if (/Too Many Requests|HTTP Error 429/i.test(errOut)) {
+        throw Object.assign(new Error("유튜브 자막 레이트리밋(429) — 잠시 후 다시 시도하세요."), { code: 429 });
+      }
       if (runError) throw runError;
       return null;
     }
@@ -70,9 +76,11 @@ async function getTranscript(videoId) {
       .join("")
       .replace(/\s+/g, " ")
       .trim();
-    // [Music]/[음악] 같은 주석만 있는 자막(음악 영상)은 자막 없음으로 취급
+    // [Music]/[음악] 같은 주석만 있는 자막(음악 영상)은 자막 없음으로 취급.
+    // 임계 10자: 한 문장짜리 쇼츠 자막은 살리고 주석 부스러기만 거른다 (리뷰 08-04)
+    const MIN_SPOKEN = 10;
     const spoken = text.replace(/\[[^\]]*\]/g, "").trim();
-    return spoken.length >= 20 ? text : null;
+    return spoken.length >= MIN_SPOKEN ? text : null;
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -219,7 +227,7 @@ createServer((req, res) => {
       });
       res.end(JSON.stringify({ summary, title: realTitle, archived: file ? `~/Documents/YouTube요약/${file}` : null }));
     } catch (e) {
-      res.writeHead(e.code === 400 ? 400 : 500).end(JSON.stringify({ error: e.message.slice(0, 500) }));
+      res.writeHead(typeof e.code === "number" ? e.code : 500).end(JSON.stringify({ error: e.message.slice(0, 500) }));
     }
   });
 })
