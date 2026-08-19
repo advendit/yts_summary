@@ -114,8 +114,10 @@ async function archive(videoId, title, summary, mode) {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const day = ts.slice(0, 10);
+  await mkdir(join(ARCHIVE, day), { recursive: true });
   const safeTitle = title.replace(/[\/\\:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  const file = `${ts}_${mode === "analyze" ? "[분석]" : "[요약]"} ${safeTitle}.md`;
+  const file = `${day}/${ts}_${mode === "analyze" ? "[기획분석]" : "[요약]"} ${safeTitle}.md`;
   const body =
     `# ${title}\n\n` +
     `- URL: https://www.youtube.com/watch?v=${videoId}\n` +
@@ -124,11 +126,12 @@ async function archive(videoId, title, summary, mode) {
   return file;
 }
 
-const SAFE_FILE = /^[^\/\\]+\.md$/;
+// 일자 폴더 한 단계까지만 허용 — 그 외 경로(../ 포함)는 차단
+const SAFE_FILE = /^(\d{4}-\d{2}-\d{2}\/)?[^\/\\]+\.md$/;
 
 async function listArchive() {
   await mkdir(ARCHIVE, { recursive: true });
-  const files = (await readdir(ARCHIVE)).filter((f) => f.endsWith(".md"));
+  const files = (await readdir(ARCHIVE, { recursive: true })).filter((f) => f.endsWith(".md"));
   const items = await Promise.all(
     files.map(async (f) => ({ file: f, mtime: (await stat(join(ARCHIVE, f))).mtimeMs }))
   );
@@ -138,18 +141,30 @@ async function listArchive() {
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function archivePage(files) {
-  const rows = files
+  // 폴더든 파일명이든 앞 10자가 YYYY-MM-DD — 그걸로 일자 그룹핑
+  const groups = {};
+  for (const f of files) (groups[/^\d{4}-\d{2}-\d{2}/.test(f) ? f.slice(0, 10) : "기타"] ||= []).push(f);
+  const rows = Object.keys(groups)
+    .sort()
+    .reverse()
     .map(
-      (f) => `<li>
-        <a href="#" onclick="view('${encodeURIComponent(f)}');return false">${esc(f.replace(/\.md$/, ""))}</a>
+      (day) =>
+        `<h2>${day}</h2>` +
+        groups[day]
+          .map(
+            (f) => `<li>
+        <a href="#" onclick="view('${encodeURIComponent(f)}');return false">${esc(f.split("/").pop().replace(/\.md$/, ""))}</a>
         <button onclick="del('${encodeURIComponent(f)}')">삭제</button>
       </li>`
+          )
+          .join("\n")
     )
     .join("\n");
   return `<!doctype html><html><head><meta charset="utf-8"><title>YouTube 요약 보관함</title>
 <style>
   body{font:15px/1.7 -apple-system,'Apple SD Gothic Neo',sans-serif;max-width:860px;margin:30px auto;padding:0 16px;color:#111}
   li{margin:6px 0;list-style:none} ul{padding:0}
+  h2{font-size:16px;margin:24px 0 4px;border-bottom:1px solid #eee;padding-bottom:4px}
   li a{text-decoration:none;color:#065fd4}
   li button{margin-left:8px;border:0;background:#eee;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px}
   #viewer{white-space:pre-wrap;border:1px solid #ddd;border-radius:10px;padding:20px;margin-top:20px;display:none}
@@ -250,6 +265,7 @@ createServer((req, res) => {
       });
       res.end(JSON.stringify({ summary, title: realTitle, archived: file ? `~/Documents/YouTube요약/${file}` : null }));
     } catch (e) {
+      console.error(new Date().toISOString(), "실패:", e.message.slice(0, 500), e.stderr ? `\nstderr: ${String(e.stderr).slice(0, 500)}` : "");
       // 의도적으로 던진 코드만 통과 — execFile 에러의 code(프로세스 종료코드 1 등)가 HTTP 코드로 새면 안 됨
       res.writeHead([400, 422, 429].includes(e.code) ? e.code : 500).end(JSON.stringify({ error: e.message.slice(0, 500) }));
     }
