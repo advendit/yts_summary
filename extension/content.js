@@ -143,7 +143,8 @@ function videoFromClick(e) {
   // 카드 컨테이너에서 제목 찾기 (실패 시 서버가 yt-dlp로 실제 제목 조회)
   const card = a.closest("ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer, yt-lockup-view-model");
   const title =
-    card?.querySelector("#video-title, h3, [title]")?.textContent?.trim() ||
+    // .ytLockupMetadataViewModelTitle: 2026 신형 카드(yt-lockup-view-model)의 제목 앵커 — 구 셀렉터론 0/12 실측(08-19)
+    card?.querySelector("#video-title, .ytLockupMetadataViewModelTitle, h3, [title]")?.textContent?.trim() ||
     a.getAttribute("title") ||
     titleNearAnchor(a, videoId) ||
     a.getAttribute("aria-label") ||
@@ -157,7 +158,11 @@ function titleNearAnchor(a, videoId) {
     const texts = [...el.querySelectorAll(`a[href*="${videoId}"]`)]
       .map((l) => (l.getAttribute("title") || l.textContent || "").replace(/\s+/g, " ").trim())
       .filter((t) => t.length >= 3 && !/^\d{1,2}(:\d{2}){1,2}$/.test(t)); // 재생시간 배지 제외
-    if (texts.length) return texts.sort((x, y) => y.length - x.length)[0];
+    if (texts.length) {
+      // 카드 전체를 감싸는 앵커 텍스트는 "재생시간+제목+채널+조회수" 뒤범벅 — 제목만 담은 후보는 그 뒤범벅의 부분문자열이다
+      const sorted = texts.sort((x, y) => y.length - x.length);
+      return sorted.find((t) => sorted.some((T) => T !== t && T.includes(t))) || sorted[0];
+    }
   }
   return null;
 }
