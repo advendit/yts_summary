@@ -145,8 +145,21 @@ function videoFromClick(e) {
   const title =
     card?.querySelector("#video-title, h3, [title]")?.textContent?.trim() ||
     a.getAttribute("title") ||
+    titleNearAnchor(a, videoId) ||
+    a.getAttribute("aria-label") ||
     videoId;
   return { videoId, title };
+}
+
+// 폴백: 같은 videoId로 가는 주변 링크 중 제일 긴 텍스트 = 제목 (셀렉터·태그명 무관 — 유튜브 개편 대비, 08-19 제목 누락 사건)
+function titleNearAnchor(a, videoId) {
+  for (let el = a.parentElement, i = 0; el && i < 8; el = el.parentElement, i++) {
+    const texts = [...el.querySelectorAll(`a[href*="${videoId}"]`)]
+      .map((l) => (l.getAttribute("title") || l.textContent || "").replace(/\s+/g, " ").trim())
+      .filter((t) => t.length >= 3 && !/^\d{1,2}(:\d{2}){1,2}$/.test(t)); // 재생시간 배지 제외
+    if (texts.length) return texts.sort((x, y) => y.length - x.length)[0];
+  }
+  return null;
 }
 
 document.addEventListener(

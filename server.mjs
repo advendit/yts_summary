@@ -251,12 +251,12 @@ createServer((req, res) => {
         res.writeHead(422).end(JSON.stringify({ error: "이 영상에는 자막(스크립트)이 없습니다." }));
         return;
       }
-      // 익스텐션이 제목을 못 뽑았으면 yt-dlp로 실제 제목 조회
+      // 익스텐션이 제목을 못 뽑았으면 yt-dlp로 실제 제목 조회 — 실패해도 요약은 진행(08-19 연타 차단 사건: 제목은 장식, 요약이 본체)
       let realTitle = title;
       if (!realTitle || realTitle === videoId) {
-        realTitle = (
-          await run(YTDLP, [...YTDLP_BASE, "--skip-download", "--print", "%(title)s", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 60000 })
-        ).stdout.trim() || videoId;
+        realTitle = await run(
+          YTDLP, [...YTDLP_BASE, "--skip-download", "--print", "%(title)s", `https://www.youtube.com/watch?v=${videoId}`], { timeout: 60000 }
+        ).then((r) => r.stdout.trim() || videoId).catch(() => videoId);
       }
       const summary = await summarize(realTitle, transcript, PROMPTS[mode] || PROMPTS.summary);
       const file = await archive(videoId, realTitle, summary, mode).catch((e) => {
