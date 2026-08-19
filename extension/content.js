@@ -7,7 +7,8 @@ let pickMode = false;
 let currentMode = "summary"; // "summary" | "analyze"
 const MODES = {
   summary: { icon: "📝", label: "요약", verb: "요약할", color: "#e62117" },
-  analyze: { icon: "🔬", label: "분석", verb: "분석할", color: "#7b2ff2" },
+  // 후킹·구성 비중·스토리텔링·타겟을 해부하는 모드 — "분석"만으로는 안 보여서 기획 분석으로 명명
+  analyze: { icon: "🔬", label: "기획 분석", verb: "기획 분석할", color: "#7b2ff2" },
 };
 
 function currentVideoId() {
@@ -184,20 +185,25 @@ function onButtonClick(mode) {
 }
 
 function injectButton() {
-  if (document.getElementById(BTN_ID + "-summary")) return;
-  const positions = { summary: 24, analyze: 110 };
-  for (const [mode, right] of Object.entries(positions)) {
+  if (document.getElementById(BTN_ID + "-bar")) return;
+  // flex 바 하나에 담아 라벨 길이와 무관하게 자동 배치 — 고정 오프셋(겹침 원인) 제거
+  const bar = document.createElement("div");
+  bar.id = BTN_ID + "-bar";
+  bar.style.cssText = `
+    position:fixed; bottom:24px; right:24px; z-index:2147483647;
+    display:flex; gap:10px; align-items:center;`;
+
+  for (const mode of ["summary", "analyze"]) {
     const m = MODES[mode];
     const btn = document.createElement("button");
     btn.id = BTN_ID + "-" + mode;
     btn.textContent = m.icon + " " + m.label;
     btn.style.cssText = `
-      position:fixed; bottom:24px; right:${right}px; z-index:2147483647;
       background:${m.color}; color:#fff; border:0; border-radius:24px;
       padding:10px 18px; font:bold 14px -apple-system,sans-serif;
-      cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3);`;
+      cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3); white-space:nowrap;`;
     btn.onclick = () => onButtonClick(mode);
-    document.body.appendChild(btn);
+    bar.appendChild(btn);
   }
 
   // 보관함 버튼
@@ -206,12 +212,13 @@ function injectButton() {
   arc.textContent = "📂";
   arc.title = "요약 보관함";
   arc.style.cssText = `
-    position:fixed; bottom:24px; right:196px; z-index:2147483647;
     background:#555; color:#fff; border:0; border-radius:24px;
     padding:10px 14px; font:bold 14px -apple-system,sans-serif;
     cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.3);`;
   arc.onclick = () => window.open("http://127.0.0.1:8790/archive", "_blank");
-  document.body.appendChild(arc);
+  bar.appendChild(arc);
+
+  document.body.appendChild(bar);
 }
 
 injectButton();
